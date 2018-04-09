@@ -2,13 +2,18 @@
 #' @export
 RasterCollection <- R6Class(
   "RasterCollection",
+  # public ----
   public = list(
+    # attributes ====
     images = NULL,
     data = NULL,
+    view = NULL,
 
+    # functions ====
     initialize = function(dates=NULL,raster=list()) {
       self$images = raster
       self$data = tibble(time=dates,space=lapply(raster,extent),image=raster)
+      self$view = CollectionView$new()
     },
 
     addGranule = function(date, raster) {
@@ -22,6 +27,15 @@ RasterCollection <- R6Class(
 
     getData = function() {
       return(self$data[match(sort(self$data$time),self$data$time),])
+    },
+
+    extent = function() {
+      xmin = min(sapply(self$data$space, xmin))
+      xmax = max(sapply(self$data$space, xmax))
+      ymin = min(sapply(self$data$space, ymin))
+      ymax = max(sapply(self$data$space, ymax))
+
+      return(extent(xmin,xmax,ymin,ymax))
     },
 
     extract = function(geoms, fun) {
@@ -56,6 +70,21 @@ RasterCollection <- R6Class(
       })
 
     },
+    select.space = function(extent,crs) {
+      if (class(extent) != "Extent") {
+        stop("Extent is no raster Extent object")
+      }
+      bbox = as(extent,"SpatialPolygons")
+      crs(bbox) <- crs
+
+      l = apply(self$data, 1, function(row) {
+        rasterbbox = as(row$space,"SpatialPolygons")
+        crs(rasterbbox) <- crs(row$image)
+        return(gCoveredBy(bbox,rasterbbox))
+      })
+
+      return(l)
+    },
 
     subset.time= function(from=NULL,to=NULL) {
       if (is.null(from) && !is.null(to)) {
@@ -74,7 +103,10 @@ RasterCollection <- R6Class(
     }
 
   ),
+  # private ----
   private = list(
+
+    # functions ====
     img.coord = function(raster, polygon) {
       #0,0 top left
       #xmin,1/res(x),0
