@@ -160,7 +160,6 @@ setwd("E:/Projekte/raster-collection")
 
 coll2 = RasterCollection$new(dates=dates,raster=ndvis)
 
-invekos.stack = stack()
 
 coll2$subset.time(from=strptime("2017-06-01", format="%Y-%m-%d"))
 coll2$getData()
@@ -177,3 +176,17 @@ as(extent(r1),"SpatialPolygons")
 bbox = as(extent(r1),"SpatialPolygons")
 crs(bbox) <- crs(ndvis[[1]])
 gCoveredBy(f1, bbox)
+
+
+extent2polygon = function(extent,crs) {
+  polygon = as(extent,"SpatialPolygons")
+  crs(polygon) <- crs
+  return(polygon)
+}
+
+coll2$getData()$space[[1]]
+plot(coll2$getData()$space[[1]])
+
+spplot(crop(coll2$getData()[[1,"image"]],y = f1),at=seq(-1,1,by=2/25),col.regions=colorRampPalette(c("black","lightgreen"))(26))
+
+coll2$select.space(extent(f1),crs(f1))

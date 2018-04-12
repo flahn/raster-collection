@@ -12,7 +12,10 @@ RasterCollection <- R6Class(
     # functions ====
     initialize = function(dates=NULL,raster=list()) {
       self$images = raster
-      self$data = tibble(time=dates,space=lapply(raster,extent),image=raster)
+      space.column = lapply(raster,function(r) {
+        private$extent2polygon(extent(r),crs(r))
+      })
+      self$data = tibble(time=dates,space=space.column,image=raster)
       self$view = CollectionView$new()
     },
 
@@ -38,20 +41,20 @@ RasterCollection <- R6Class(
       return(extent(xmin,xmax,ymin,ymax))
     },
 
-    extract = function(geoms, fun) {
+    extract = function(geoms, fun,raster.fun=raster) {
       tryCatch({
         result = list()
         sink("nul")
         for (index in 1:length(geoms)) {
           geom = geoms[index,]
 
-          rasters = self$getData()$image
+          rasters = self$select.space(extent(geom),crs(geom))$image
 
 
           vals = sapply(rasters, function(r) {
 
             image.coords = private$img.coord(r,geom)
-            raster.subset = raster(readGDAL(filename(r),
+            raster.subset = raster.fun(readGDAL(filename(r),
                                             offset=c(image.coords["y","min"],image.coords["x","min"]),
                                             region.dim=c(image.coords["y","max"]-image.coords["y","min"],
                                                          image.coords["x","max"]-image.coords["x","min"]),
@@ -77,13 +80,11 @@ RasterCollection <- R6Class(
       bbox = as(extent,"SpatialPolygons")
       crs(bbox) <- crs
 
-      l = apply(self$data, 1, function(row) {
-        rasterbbox = as(row$space,"SpatialPolygons")
-        crs(rasterbbox) <- crs(row$image)
-        return(gCoveredBy(bbox,rasterbbox))
+      l = apply(self$getData(), 1, function(row) {
+        return(gIntersects(bbox,row$space))
       })
 
-      return(l)
+      return(self$getData()[l,])
     },
 
     subset.time= function(from=NULL,to=NULL) {
@@ -108,13 +109,21 @@ RasterCollection <- R6Class(
 
     # functions ====
     img.coord = function(raster, polygon) {
+      raster.polygon = private$extent2polygon(extent(raster),crs(raster))
+      polygon.bbox = private$extent2polygon(extent(polygon),crs(polygon))
+
+      if (!gIntersects(raster.polygon,polygon.bbox)) {
+        stop("Polygon and image do not intersect at all")
+      }
+      intersection = gIntersection(raster.polygon,polygon.bbox)
+
       #0,0 top left
       #xmin,1/res(x),0
       #ymax, 1, -1/res(y)
-      xmin = xmin(extent(raster))
-      ymax = ymax(extent(raster))
+      xmin = xmin(raster)
+      ymax = ymax(raster)
 
-      e = rbind(c(1,1),rbind(c(xmin(polygon),xmax(polygon)),c(ymin(polygon),ymax(polygon)))-matrix(c(xmin,ymax,xmin,ymax),ncol=2,nrow=2))
+      e = rbind(c(1,1),rbind(c(xmin(intersection),xmax(intersection)),c(ymin(intersection),ymax(intersection)))-matrix(c(xmin,ymax,xmin,ymax),ncol=2,nrow=2))
 
       m = matrix(c(0,0,1/xres(raster),0,0,-1/yres(raster)),nrow=2,ncol=3)
 
@@ -129,6 +138,12 @@ RasterCollection <- R6Class(
       result[,"max"] = ceiling(result[,"max"])
 
       return(result)
+    },
+
+    extent2polygon = function(extent,crs) {
+      polygon = as(extent,"SpatialPolygons")
+      crs(polygon) <- crs
+      return(polygon)
     }
   )
 )
