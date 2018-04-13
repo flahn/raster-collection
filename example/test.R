@@ -190,3 +190,9 @@ plot(coll2$getData()$space[[1]])
 spplot(crop(coll2$getData()[[1,"image"]],y = f1),at=seq(-1,1,by=2/25),col.regions=colorRampPalette(c("black","lightgreen"))(26))
 
 coll2$select.space(extent(f1),crs(f1))
+
+# extract naming tests
+coll2 = RasterCollection$new(dates=dates,raster=ndvis)
+vals2 = coll2$extract(geoms = polygons.invekos,fun = function(x,na.rm){
+  return(list(mean=mean(x,na.rm = na.rm),sd=sd(x,na.rm=na.rm)))
+})

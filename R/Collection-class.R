@@ -41,18 +41,17 @@ RasterCollection <- R6Class(
       return(extent(xmin,xmax,ymin,ymax))
     },
 
-    extract = function(geoms, fun,raster.fun=raster) {
+    extract = function(geoms, fun,raster.fun=raster,col.id="id") {
       tryCatch({
         result = list()
         sink("nul")
         for (index in 1:length(geoms)) {
           geom = geoms[index,]
 
-          rasters = self$select.space(extent(geom),crs(geom))$image
+          rasters = self$select.space(extent(geom),crs(geom))
 
-
-          vals = sapply(rasters, function(r) {
-
+          vals = apply(rasters, 1, function(row) {
+            r = row$image
             image.coords = private$img.coord(r,geom)
             raster.subset = raster.fun(readGDAL(filename(r),
                                             offset=c(image.coords["y","min"],image.coords["x","min"]),
@@ -61,9 +60,10 @@ RasterCollection <- R6Class(
                                             output.dim = c(image.coords["y","max"]-image.coords["y","min"],
                                                            image.coords["x","max"]-image.coords["x","min"])))
 
-            vals = extract(raster.subset,geom,fun=fun)
-
-            return(vals)
+            e = extract(raster.subset,geom,fun=fun,df=TRUE)
+            e[,"ID"] <- NULL
+            e = cbind(e,list(time=as.character(row$time),id=as.numeric(geom@data[,col.id])))
+            return(e)
           })
           result = append(result,list(vals))
         }
