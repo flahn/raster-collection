@@ -41,31 +41,50 @@ RasterCollection <- R6Class(
       return(extent(xmin,xmax,ymin,ymax))
     },
 
-    extract = function(geoms, fun,raster.fun=raster,col.id="id") {
+    extract = function(geoms, fun,raster.fun=raster,col.id="id",attribute.names,row.handler=NULL) {
       tryCatch({
-        result = list()
+        result = NULL
         sink("nul")
         for (index in 1:length(geoms)) {
           geom = geoms[index,]
 
           rasters = self$select.space(extent(geom),crs(geom))
 
-          vals = apply(rasters, 1, function(row) {
-            r = row$image
+          for(rindex in 1:nrow(rasters)){
+            row = rasters[rindex,]
+            r = row$image[[1]]
             image.coords = private$img.coord(r,geom)
             raster.subset = raster.fun(readGDAL(filename(r),
-                                            offset=c(image.coords["y","min"],image.coords["x","min"]),
-                                            region.dim=c(image.coords["y","max"]-image.coords["y","min"],
-                                                         image.coords["x","max"]-image.coords["x","min"]),
-                                            output.dim = c(image.coords["y","max"]-image.coords["y","min"],
-                                                           image.coords["x","max"]-image.coords["x","min"])))
+                                                offset=c(image.coords["y","min"],image.coords["x","min"]),
+                                                region.dim=c(image.coords["y","max"]-image.coords["y","min"],
+                                                             image.coords["x","max"]-image.coords["x","min"]),
+                                                output.dim = c(image.coords["y","max"]-image.coords["y","min"],
+                                                               image.coords["x","max"]-image.coords["x","min"])))
 
             e = extract(raster.subset,geom,fun=fun,df=TRUE)
+
+            if (nrow(e) != length(attribute.names)) {
+              stop("Extract functions output values don't match the given attribute names.")
+            }
+
             e[,"ID"] <- NULL
-            e = cbind(e,list(time=as.character(row$time),id=as.numeric(geom@data[,col.id])))
-            return(e)
-          })
-          result = append(result,list(vals))
+            e = as.data.frame(t(e),stringsAsFactors=FALSE)
+            #TODO consider multiple bands here, now we only have one row called band1
+
+            colnames(e) = attribute.names
+            e = cbind(time=as.character(row$time),id=as.numeric(geom@data[,col.id]),e,stringsAsFactors=FALSE)
+
+
+            if (!is.null(row.handler)) {
+              row.handler(e)
+            } else {
+              if (is.null(result)) {
+                result = as_tibble(e)
+              } else {
+                result = do.call("add_row", append(list(.data=result),as.list(e)))
+              }
+            }
+          }
         }
         return(result)
       },finally={
