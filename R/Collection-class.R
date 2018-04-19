@@ -13,7 +13,7 @@ RasterCollection <- R6Class(
     initialize = function(dates=NULL,raster=list()) {
       self$images = raster
       space.column = lapply(raster,function(r) {
-        private$extent2polygon(extent(r),crs(r))
+        extent2polygon(extent(r),crs(r))
       })
       self$data = tibble(time=dates,space=space.column,image=raster)
       self$view = CollectionView$new()
@@ -41,55 +41,69 @@ RasterCollection <- R6Class(
       return(extent(xmin,xmax,ymin,ymax))
     },
 
-    extract = function(geoms, fun,raster.fun=raster,col.id="id",attribute.names,row.handler=NULL) {
-      tryCatch({
-        result = NULL
-        sink("nul")
-        for (index in 1:length(geoms)) {
-          geom = geoms[index,]
+    extract = function(geoms, fun,raster.fun=raster,col.id="id",attribute.names,row.handler=NULL,cpuLoad=0.7) {
+      totalCores = detectCores()
+      coresToUse = floor(totalCores * cpuLoad)
+      if (coresToUse < 1) coresToUse = 1
 
-          rasters = self$select.space(extent(geom),crs(geom))
+      if (!is.null(row.handler)) {
+        tryCatch({
 
-          for(rindex in 1:nrow(rasters)){
-            row = rasters[rindex,]
-            r = row$image[[1]]
-            image.coords = private$img.coord(r,geom)
-            raster.subset = raster.fun(readGDAL(filename(r),
-                                                offset=c(image.coords["y","min"],image.coords["x","min"]),
-                                                region.dim=c(image.coords["y","max"]-image.coords["y","min"],
-                                                             image.coords["x","max"]-image.coords["x","min"]),
-                                                output.dim = c(image.coords["y","max"]-image.coords["y","min"],
-                                                               image.coords["x","max"]-image.coords["x","min"])))
+          cluster = makeCluster(coresToUse)
 
-            e = extract(raster.subset,geom,fun=fun,df=TRUE)
+          registerDoParallel(cluster)
 
-            if (nrow(e) != length(attribute.names)) {
-              stop("Extract functions output values don't match the given attribute names.")
-            }
+          foreach(jobid= 1:coresToUse,
+                  # self=self,
+                  # geoms = geoms,
+                  # raster.fun=raster.fun,
+                  # fun=fun,
+                  # col.id = col.id,
+                  # attribute.names = attribute.names,
+                  # row.handler = row.handler,
+                  .export = c("self",
+                              "geoms",
+                              "raster.fun",
+                              "fun",
+                              "col.id",
+                              "attribute.names",
+                              "row.handler"),
+                  .packages = c("raster.collection",
+                                "raster",
+                                "rgdal",
+                                "tibble",
+                                "rpostgis")) %dopar% {
 
-            e[,"ID"] <- NULL
-            e = as.data.frame(t(e),stringsAsFactors=FALSE)
-            #TODO consider multiple bands here, now we only have one row called band1
+            nr.geoms = ceiling(length(geoms)/5)
+            start = ((jobid-1) * nr.geoms)+1
 
-            colnames(e) = attribute.names
-            e = cbind(time=as.character(row$time),id=as.numeric(geom@data[,col.id]),e,stringsAsFactors=FALSE)
+            end = jobid * nr.geoms
 
+            selector = seq(start,end,1)
 
-            if (!is.null(row.handler)) {
-              row.handler(e)
-            } else {
-              if (is.null(result)) {
-                result = as_tibble(e)
-              } else {
-                result = do.call("add_row", append(list(.data=result),as.list(e)))
-              }
-            }
+            raster.collection:::extractSingle(collection=self,
+                                  geoms = geoms[selector,],
+                                  fun = fun,
+                                  raster.fun = raster.fun,
+                                  col.id = col.id,
+                                  attribute.names = attribute.names,
+                                  row.handler = row.handler)
           }
-        }
-        return(result)
-      },finally={
-        sink()
-      })
+
+
+        }, finally=stopCluster(cluster))
+      } else {
+        return(raster.collection:::extractSingle(collection=self,
+                                                 fun= fun,
+                                                 geoms = geoms,
+                                                 raster.fun = raster.fun,
+                                                 col.id = col.id,
+                                                 attribute.names = attribute.names,
+                                                 row.handler = row.handler))
+      }
+
+
+
 
     },
     select.space = function(extent,crs) {
@@ -127,42 +141,113 @@ RasterCollection <- R6Class(
   private = list(
 
     # functions ====
-    img.coord = function(raster, polygon) {
-      raster.polygon = private$extent2polygon(extent(raster),crs(raster))
-      polygon.bbox = private$extent2polygon(extent(polygon),crs(polygon))
 
-      if (!gIntersects(raster.polygon,polygon.bbox)) {
-        stop("Polygon and image do not intersect at all")
-      }
-      intersection = gIntersection(raster.polygon,polygon.bbox)
-
-      #0,0 top left
-      #xmin,1/res(x),0
-      #ymax, 1, -1/res(y)
-      xmin = xmin(raster)
-      ymax = ymax(raster)
-
-      e = rbind(c(1,1),rbind(c(xmin(intersection),xmax(intersection)),c(ymin(intersection),ymax(intersection)))-matrix(c(xmin,ymax,xmin,ymax),ncol=2,nrow=2))
-
-      m = matrix(c(0,0,1/xres(raster),0,0,-1/yres(raster)),nrow=2,ncol=3)
-
-      result=m %*% e
-      rownames(result) <- c("x","y")
-      colnames(result) <- c("min","max")
-
-      tmp = result["y","min"]
-      result["y","min"] = result["y","max"]
-      result["y","max"] = tmp
-      result[,"min"] = floor(result[,"min"])
-      result[,"max"] = ceiling(result[,"max"])
-
-      return(result)
-    },
-
-    extent2polygon = function(extent,crs) {
-      polygon = as(extent,"SpatialPolygons")
-      crs(polygon) <- crs
-      return(polygon)
-    }
   )
 )
+
+# statics ----
+extent2polygon = function(extent,crs) {
+  polygon = as(extent,"SpatialPolygons")
+  crs(polygon) <- crs
+  return(polygon)
+}
+
+img.coord = function(raster, polygon) {
+  raster.polygon = raster.collection:::extent2polygon(extent(raster),crs(raster))
+  polygon.bbox = raster.collection:::extent2polygon(extent(polygon),crs(polygon))
+
+  if (!gIntersects(raster.polygon,polygon.bbox)) {
+    stop("Polygon and image do not intersect at all")
+  }
+  intersection = gIntersection(raster.polygon,polygon.bbox)
+
+  #0,0 top left
+  #xmin,1/res(x),0
+  #ymax, 1, -1/res(y)
+  xmin = xmin(raster)
+  ymax = ymax(raster)
+
+  e = rbind(c(1,1),rbind(c(xmin(intersection),xmax(intersection)),c(ymin(intersection),ymax(intersection)))-matrix(c(xmin,ymax,xmin,ymax),ncol=2,nrow=2))
+
+  m = matrix(c(0,0,1/xres(raster),0,0,-1/yres(raster)),nrow=2,ncol=3)
+
+  result=m %*% e
+  rownames(result) <- c("x","y")
+  colnames(result) <- c("min","max")
+
+  tmp = result["y","min"]
+  result["y","min"] = result["y","max"]
+  result["y","max"] = tmp
+  result[,"min"] = floor(result[,"min"])
+  result[,"max"] = ceiling(result[,"max"])
+
+  return(result)
+}
+
+extractSingle = function(collection, geoms, fun,raster.fun=raster,col.id="id",attribute.names,row.handler=NULL) {
+  tryCatch({
+    result = NULL
+    sink("nul")
+    for (index in 1:length(geoms)) {
+      geom = geoms[index,]
+
+      rasters = raster.collection:::.select.space(collection,extent(geom),crs(geom))
+
+      for(rindex in 1:nrow(rasters)){
+        row = rasters[rindex,]
+        r = row$image[[1]]
+        image.coords = raster.collection:::img.coord(r,geom)
+        raster.subset = raster.fun(readGDAL(filename(r),
+                                            offset=c(image.coords["y","min"],image.coords["x","min"]),
+                                            region.dim=c(image.coords["y","max"]-image.coords["y","min"],
+                                                         image.coords["x","max"]-image.coords["x","min"]),
+                                            output.dim = c(image.coords["y","max"]-image.coords["y","min"],
+                                                           image.coords["x","max"]-image.coords["x","min"])))
+
+        e = extract(raster.subset,geom,fun=fun,df=TRUE)
+
+        if (nrow(e) != length(attribute.names)) {
+          stop("Extract functions output values don't match the given attribute names.")
+        }
+
+        e[,"ID"] <- NULL
+        e = as.data.frame(t(e),stringsAsFactors=FALSE)
+        #TODO consider multiple bands here, now we only have one row called band1
+
+        colnames(e) = attribute.names
+        e = cbind(time=as.character(row$time),id=as.numeric(geom@data[,col.id]),e,stringsAsFactors=FALSE)
+
+
+        if (!is.null(row.handler)) {
+          row.handler(e)
+        } else {
+          if (is.null(result)) {
+            result = as_tibble(e)
+          } else {
+            result = do.call("add_row", append(list(.data=result),as.list(e)))
+          }
+        }
+      }
+    }
+    return(result)
+  },finally={
+    sink()
+  })
+}
+
+.select.space = function(collection,extent,crs) {
+  if (class(extent) != "Extent") {
+    stop("Extent is no raster Extent object")
+  }
+  bbox = as(extent,"SpatialPolygons")
+  crs(bbox) <- crs
+
+  l = apply(collection$getData(), 1, function(row) {
+    return(gIntersects(bbox,row$space))
+  })
+
+  return(collection$getData()[l,])
+}
+
+
+
