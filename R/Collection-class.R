@@ -249,5 +249,24 @@ extractSingle = function(collection, geoms, fun,raster.fun=raster,col.id="id",at
   return(collection$getData()[l,])
 }
 
-
-
+#' @title Extract
+#'
+#' @description The extract function wraps the similar called function of the raster package, with the twist that
+#' it is not loading that much data into memory. We will use a polygons bounding box and extract those
+#' relatively small subsets directly from multiple files using GDAL (rgdal).
+#' We have also the possibility to state a custom row handling which might be used to inject extracted values
+#' directly into a database or write it to a file. Otherwise it will create a large tibble table that resides
+#' in memory.
+#'
+#' @name RasterCollection.extract
+#' @param geoms SpatialPolygon or SpatialPolygonsDataFrame that shall be used for extraction
+#' @param fun the function that will be passed to raster::extract function
+#' @param raster.fun function of the raster package that is applied when building an image format in R, when loading the small bounding boxes for polygons (raster as default)
+#' @param col.id the name of the polygon id column when creating the row data.frame ("id" as default)
+#' @param attribute.names character vector that labels the columns for calculated attributes for the row data.frame
+#' @param row.handler a function that defines custom behavior how to deal with the row (extracted values) if omitted or NULL a tibble will be created
+#' @param cpuLoad if a row.handler is specified this parameter is used to calculate the amount of cores used to reach the targeted cpu load (values between 0 and 1)
+#'
+#' @return a tibble if row.handler is omitted otherwise it is void
+NULL
+#geoms, fun,raster.fun=raster,col.id="id",attribute.names,row.handler=NULL,cpuLoad=0.7
