@@ -78,6 +78,9 @@ RasterCollection <- R6Class(
             start = ((jobid-1) * nr.geoms)+1
 
             end = jobid * nr.geoms
+            if (end > length(geoms)) {
+              end = length(geoms)
+            }
 
             selector = seq(start,end,1)
 
