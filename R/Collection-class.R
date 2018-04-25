@@ -74,7 +74,7 @@ RasterCollection <- R6Class(
                                 "tibble",
                                 "rpostgis")) %dopar% {
 
-            nr.geoms = ceiling(length(geoms)/5)
+            nr.geoms = ceiling(length(geoms)/coresToUse)
             start = ((jobid-1) * nr.geoms)+1
 
             end = jobid * nr.geoms
