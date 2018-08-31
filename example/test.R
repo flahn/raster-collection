@@ -142,12 +142,24 @@ for (index in 2:length(rs))  {
 #change to where the calculated ndvis are
 library(rgdal)
 library(raster)
+library(rgeos)
 library(raster.collection)
+setwd("D:/rastertest")
+
+filenames = list("S2A_MSIL1C_20170430T103021_N0205_R108_T32UNE_20170430T103024",
+                 "S2A_MSIL1C_20170602T104021_N0205_R008_T32UNE_20170602T104212",
+                 "S2A_MSIL1C_20170709T103021_N0205_R108_T32UNE_20170709T103159",
+                 "S2A_MSIL1C_20170917T103021_N0205_R108_T32UNE_20170917T103018",
+                 "S2B_MSIL1C_20170823T103019_N0205_R108_T32UNE_20170823T103018")
+dates = as.POSIXct(strptime(substr(filenames,12,26),format="%Y%m%dT%H%M%S"))
+
 ndvis = lapply(list.files(pattern="ndvi"),raster)
 polygons.invekos = readOGR(dsn=".",layer="invekos")
+
+setwd("E:/Projekte/raster-collection")
+
 coll2 = RasterCollection$new(dates=dates,raster=ndvis)
 
-invekos.stack = stack()
 
 coll2$subset.time(from=strptime("2017-06-01", format="%Y-%m-%d"))
 coll2$getData()
@@ -158,3 +170,29 @@ for (index in 1:length(vals)) {
   values = vals[[index]]
   plot(values~coll2$getData()$time,ylab="NDVI",xlab="Date",type="l",ylim=c(0,1))
 }
+
+f1 = polygons.invekos[1,]
+as(extent(r1),"SpatialPolygons")
+bbox = as(extent(r1),"SpatialPolygons")
+crs(bbox) <- crs(ndvis[[1]])
+gCoveredBy(f1, bbox)
+
+
+extent2polygon = function(extent,crs) {
+  polygon = as(extent,"SpatialPolygons")
+  crs(polygon) <- crs
+  return(polygon)
+}
+
+coll2$getData()$space[[1]]
+plot(coll2$getData()$space[[1]])
+
+spplot(crop(coll2$getData()[[1,"image"]],y = f1),at=seq(-1,1,by=2/25),col.regions=colorRampPalette(c("black","lightgreen"))(26))
+
+coll2$select.space(extent(f1),crs(f1))
+
+# extract naming tests
+coll2 = RasterCollection$new(dates=dates,raster=ndvis)
+vals2 = coll2$extract(geoms = polygons.invekos,fun = function(x,na.rm){
+  return(list(mean=mean(x,na.rm = na.rm),sd=sd(x,na.rm=na.rm)))
+})
