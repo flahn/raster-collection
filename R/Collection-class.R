@@ -29,7 +29,7 @@ RasterCollection <- R6Class(
     },
 
     getData = function() {
-      return(self$data[match(sort(self$data$time),self$data$time),])
+      return(self$data %>% arrange(time))
     },
 
     extent = function() {
@@ -61,6 +61,8 @@ RasterCollection <- R6Class(
         export_packages = c("raster.collection",
                             "raster",
                             "rgdal",
+                            "dplyr",
+                            "magrittr",
                             "tibble",
                             "rpostgis")
       }
