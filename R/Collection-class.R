@@ -211,7 +211,7 @@ extractSingle = function(collection, geoms, fun,raster.fun=raster,col.id="id",at
                                             output.dim = c(image.coords["y","max"]-image.coords["y","min"],
                                                            image.coords["x","max"]-image.coords["x","min"])))
 
-        e = extract(raster.subset,geom,fun=fun,df=TRUE)
+        e = raster::extract(raster.subset,geom,fun=fun,df=TRUE)
 
         if (nrow(e) != length(attribute.names)) {
           stop("Extract functions output values don't match the given attribute names.")
@@ -222,7 +222,9 @@ extractSingle = function(collection, geoms, fun,raster.fun=raster,col.id="id",at
         #TODO consider multiple bands here, now we only have one row called band1
 
         colnames(e) = attribute.names
-        e = cbind(time=as.character(row$time),id=as.numeric(geom@data[,col.id]),e,stringsAsFactors=FALSE)
+
+        id = geom@data[,col.id]
+        e = cbind(time=as.character(row$time),id=id,e,stringsAsFactors=FALSE)
 
 
         if (!is.null(row.handler)) {
