@@ -29,7 +29,7 @@ RasterCollection <- R6Class(
     },
 
     getData = function() {
-      return(self$data[match(sort(self$data$time),self$data$time),])
+      return(self$data %>% arrange(time))
     },
 
     extent = function() {
@@ -41,10 +41,31 @@ RasterCollection <- R6Class(
       return(extent(xmin,xmax,ymin,ymax))
     },
 
-    extract = function(geoms, fun,raster.fun=raster,col.id="id",attribute.names,row.handler=NULL,cpuLoad=0.7) {
+    extract = function(geoms, fun,raster.fun=raster,col.id="id",attribute.names,row.handler=NULL,cpuLoad=0.7,
+                       export_vars=NULL,export_packages=NULL) {
       totalCores = detectCores()
       coresToUse = floor(totalCores * cpuLoad)
       if (coresToUse < 1) coresToUse = 1
+
+      if (is.null(export_vars)) {
+        export_vars = c("self",
+                        "geoms",
+                        "raster.fun",
+                        "fun",
+                        "col.id",
+                        "attribute.names",
+                        "row.handler")
+      }
+
+      if (is.null(export_packages)) {
+        export_packages = c("raster.collection",
+                            "raster",
+                            "rgdal",
+                            "dplyr",
+                            "magrittr",
+                            "tibble",
+                            "rpostgis")
+      }
 
       if (!is.null(row.handler)) {
         tryCatch({
@@ -54,25 +75,8 @@ RasterCollection <- R6Class(
           registerDoParallel(cluster)
 
           foreach(jobid= 1:coresToUse,
-                  # self=self,
-                  # geoms = geoms,
-                  # raster.fun=raster.fun,
-                  # fun=fun,
-                  # col.id = col.id,
-                  # attribute.names = attribute.names,
-                  # row.handler = row.handler,
-                  .export = c("self",
-                              "geoms",
-                              "raster.fun",
-                              "fun",
-                              "col.id",
-                              "attribute.names",
-                              "row.handler"),
-                  .packages = c("raster.collection",
-                                "raster",
-                                "rgdal",
-                                "tibble",
-                                "rpostgis")) %dopar% {
+                  .export = export_vars,
+                  .packages = export_packages) %dopar% {
 
             nr.geoms = ceiling(length(geoms)/coresToUse)
             start = ((jobid-1) * nr.geoms)+1

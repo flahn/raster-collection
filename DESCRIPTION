@@ -1,7 +1,7 @@
 Package: raster.collection
 Type: Package
 Title: Extending functions of the raster package to handle spatio-temporal image collections
-Version: 0.1.0
+Version: 0.1.2
 Author: Florian Lahn
 Maintainer: Florian Lahn <florian.lahn@uni-muenster.de>
 Description: This package aims to use the established raster functions and applies them on the spatio-temporal image collections defined in this package.
@@ -15,5 +15,7 @@ Depends:
  rgeos (>= 0.3-26),
  rgdal (>= 1.2-18),
  doParallel (>= 1.0.11),
- foreach (>= 1.4.4)
+ foreach (>= 1.4.4),
+ dplyr (>= 0.7.6),
+ magrittr (>= 1.5)
 RoxygenNote: 6.0.1
